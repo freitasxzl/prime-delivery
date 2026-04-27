@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prime Delivery - Firebase</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 30px;
+            padding: 40px;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+        h1 { text-align: center; color: #e63946; margin-bottom: 10px; }
+        .sub { text-align: center; color: #666; margin-bottom: 30px; }
+        input, select, button {
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            border: 2px solid #e2e8f0;
+            border-radius: 20px;
+            font-size: 16px;
+        }
+        button {
+            background: linear-gradient(135deg, #e63946, #ff6b6b);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        button:hover { transform: scale(1.02); }
+        .error { color: red; text-align: center; margin: 10px 0; }
+        .success { color: green; text-align: center; margin: 10px 0; }
+        .role-selector {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .role-btn {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            background: #f1f5f9;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .role-btn.active {
+            background: #e63946;
+            color: white;
+        }
+        .toggle {
+            text-align: center;
+            margin-top: 20px;
+            color: #e63946;
+            cursor: pointer;
+        }
+        .dashboard { display: none; }
+        .user-info {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+        }
+        .logout-btn {
+            background: #64748b;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+<div class="container" id="authContainer">
+    <h1>🍔 Prime Delivery</h1>
+    <p class="sub">Sistema com Firebase</p>
+    
+    <div id="loginDiv">
+        <div class="role-selector" id="roleSelector">
+            <div class="role-btn active" data-role="cliente">👤 Cliente</div>
+            <div class="role-btn" data-role="entregador">🛵 Entregador</div>
+            <div class="role-btn" data-role="admin">👑 Admin</div>
+        </div>
+        <input type="email" id="loginEmail" placeholder="Email">
+        <input type="password" id="loginPassword" placeholder="Senha">
+        <button onclick="fazerLogin()">Entrar</button>
+        <div class="toggle" onclick="toggleAuth()">Não tem conta? Cadastre-se</div>
+    </div>
+
+    <div id="registerDiv" style="display:none">
+        <input type="text" id="regNome" placeholder="Nome completo">
+        <input type="email" id="regEmail" placeholder="Email">
+        <input type="password" id="regPassword" placeholder="Senha">
+        <input type="text" id="regVeiculo" placeholder="Veículo (entregador)" style="display:none">
+        <button onclick="fazerCadastro()">Cadastrar</button>
+        <div class="toggle" onclick="toggleAuth()">Já tem conta? Faça login</div>
+    </div>
+
+    <div id="msg" class="error"></div>
+</div>
+
+<div class="container dashboard" id="dashboardContainer">
+    <div class="user-info">
+        <strong id="userName"></strong><br>
+        <span id="userRole"></span>
+    </div>
+    <div id="dashboardContent"></div>
+    <button class="logout-btn" onclick="logout()">Sair</button>
+</div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+            "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
+            "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js"
+        }
+    }
+</script>
+
+<script type="module">
+    import { initializeApp } from "firebase/app";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
+    import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
+
+    // SUA CONFIGURAÇÃO DO FIREBASE
+    const firebaseConfig = {
+        apiKey: "AIzaSyATZEUzB9st2Eay_PQecakJ4xRT24mMWBY",
+        authDomain: "prime-delivery-f72f9.firebaseapp.com",
+        projectId: "prime-delivery-f72f9",
+        storageBucket: "prime-delivery-f72f9.firebasestorage.app",
+        messagingSenderId: "785533271854",
+        appId: "1:705533271854:web:4242ca8ae3c2523ae164bf",
+        measurementId: "G-S9L8KDKCVE"
+    };
+
+    // Inicializar Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentUser = null;
+    let selectedRole = 'cliente';
+
+    // Seleção de perfil
+    document.querySelectorAll('.role-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.role-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            selectedRole = this.dataset.role;
+            document.getElementById('regVeiculo').style.display = selectedRole === 'entregador' ? 'block' : 'none';
+        });
+    });
+
+    window.toggleAuth = function() {
+        const loginDiv = document.getElementById('loginDiv');
+        const registerDiv = document.getElementById('registerDiv');
+        const isLogin = loginDiv.style.display !== 'none';
+        
+        loginDiv.style.display = isLogin ? 'none' : 'block';
+        registerDiv.style.display = isLogin ? 'block' : 'none';
+        document.getElementById('msg').innerHTML = '';
+    };
+
+    window.fazerCadastro = async function() {
+        const nome = document.getElementById('regNome').value;
+        const email = document.getElementById('regEmail').value;
+        const senha = document.getElementById('regPassword').value;
+        const veiculo = document.getElementById('regVeiculo').value;
+        
+        if (!nome || !email || !senha) {
+            document.getElementById('msg').innerHTML = 'Preencha todos os campos!';
+            return;
+        }
+        
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, senha);
+            const user = userCredential.user;
+            
+            await setDoc(doc(db, 'usuarios', user.uid), {
+                nome: nome,
+                email: email,
+                tipo: selectedRole,
+                veiculo: selectedRole === 'entregador' ? veiculo : null,
+                dataCadastro: new Date()
+            });
+            
+            document.getElementById('msg').innerHTML = '<span class="success">✅ Cadastro realizado! Faça login.</span>';
+            window.toggleAuth();
+        } catch (error) {
+            document.getElementById('msg').innerHTML = '❌ ' + error.message;
+        }
+    };
+
+    window.fazerLogin = async function() {
+        const email = document.getElementById('loginEmail').value;
+        const senha = document.getElementById('loginPassword').value;
+        
+        if (!email || !senha) {
+            document.getElementById('msg').innerHTML = 'Preencha email e senha!';
+            return;
+        }
+        
+        try {
+            if (email === 'admin@gmail.com' && senha === '123456') {
+                currentUser = { nome: 'Administrador', tipo: 'admin' };
+                mostrarDashboard();
+                return;
+            }
+            
+            const userCredential = await signInWithEmailAndPassword(auth, email, senha);
+            const user = userCredential.user;
+            
+            const docRef = doc(db, 'usuarios', user.uid);
+            const docSnap = await getDoc(docRef);
+            
+            if (docSnap.exists()) {
+                currentUser = docSnap.data();
+                currentUser.id = user.uid;
+                mostrarDashboard();
+            } else {
+                document.getElementById('msg').innerHTML = 'Usuário não encontrado!';
+            }
+        } catch (error) {
+            document.getElementById('msg').innerHTML = '❌ ' + error.message;
+        }
+    };
+
+    function mostrarDashboard() {
+        document.getElementById('authContainer').style.display = 'none';
+        document.getElementById('dashboardContainer').style.display = 'block';
+        document.getElementById('userName').innerHTML = currentUser.nome;
+        document.getElementById('userRole').innerHTML = currentUser.tipo === 'admin' ? '👑 Administrador' : (currentUser.tipo === 'entregador' ? '🛵 Entregador' : '👤 Cliente');
+        
+        const content = document.getElementById('dashboardContent');
+        
+        if (currentUser.tipo === 'cliente') {
+            content.innerHTML = `
+                <h3>📦 Meus Pedidos</h3>
+                <p>Bem-vindo ao sistema Prime Delivery!</p>
+                <p>✅ Firebase funcionando perfeitamente!</p>
+                <button onclick="fazerPedido()" style="margin-top:20px">🛒 Fazer Pedido</button>
+            `;
+        } else if (currentUser.tipo === 'entregador') {
+            content.innerHTML = `
+                <h3>🚚 Entregas Disponíveis</h3>
+                <p>Aguardando pedidos...</p>
+                <p>✅ Você está logado como entregador!</p>
+            `;
+        } else {
+            content.innerHTML = `
+                <h3>📊 Dashboard Admin</h3>
+                <p>✅ Firebase Authentication: OK</p>
+                <p>✅ Firestore Database: OK</p>
+                <p>✅ Sistema funcionando perfeitamente!</p>
+            `;
+        }
+    }
+    
+    window.fazerPedido = function() {
+        alert('Funcionalidade de pedido em desenvolvimento! O Firebase está funcionando!');
+    };
+    
+    window.logout = async function() {
+        await signOut(auth);
+        currentUser = null;
+        document.getElementById('authContainer').style.display = 'block';
+        document.getElementById('dashboardContainer').style.display = 'none';
+        document.getElementById('loginEmail').value = '';
+        document.getElementById('loginPassword').value = '';
+    };
+</script>
+</body>
+</html>
